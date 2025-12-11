@@ -11,7 +11,7 @@
 
   /* --- APP LAYOUT --- */
   .app-container{
-    max-width:850px;
+    max-width:1100px;
     margin:0 auto;
     padding:20px;
   }
@@ -245,15 +245,9 @@
 <!-- NEW LAYOUT WRAPPER → CARD STYLE FOR EVERYTHING -->
 <div class="app-card">
   <div class="button-bar">
-<button class="basic" onclick="loadData()">🔄 Aktualisieren</button>
-    <button class="basic" onclick="exportData()">Exportieren</button>
-    <button class="basic" onclick="exportData()">Exportieren</button>
-    <button class="basic" onclick="document.getElementById('importFile').click()">Importieren</button>
-    <input id="importFile" type="file" accept="application/json" style="display:none" onchange="importData(event)">
+    <button class="basic" onclick="loadData()">🔄 Aktualisieren</button>
   </div>
-</div>
-
-<div class="app-card">
+</div><div class="app-card">
   <div class="section-title"><span class="material-icons">check_circle</span>To‑Do</div>
   <table id="todo-table">
     <tr><th>Aufgabe</th><th>Fertig?</th><th></th></tr>
@@ -388,8 +382,12 @@ function createMobileCard(type, data = {}) {
   
   // Auto-save bei Änderungen
   card.querySelectorAll('input, select').forEach(input => {
-    input.addEventListener('input', syncMobileToTable);
-    input.addEventListener('change', syncMobileToTable);
+    input.addEventListener('input', () => {
+      setTimeout(autoSave, 300);
+    });
+    input.addEventListener('change', () => {
+      setTimeout(autoSave, 300);
+    });
   });
   
   return card;
@@ -399,10 +397,14 @@ function addMobileCard(type) {
   const container = document.getElementById(`${type}-cards`);
   const card = createMobileCard(type);
   container.appendChild(card);
+  
+  // Synchronisiere zur Tabelle
   syncMobileToTable();
-}
-
-function deleteMobileCard(btn) {
+  
+  // Fokussiere das erste Input-Feld
+  const firstInput = card.querySelector('input');
+  if (firstInput) firstInput.focus();
+}function deleteMobileCard(btn) {
   const container = btn.closest('.mobile-cards');
   if (container.querySelectorAll('.mobile-card').length > 1) {
     btn.closest('.mobile-card').remove();
@@ -424,7 +426,19 @@ function syncMobileToTable() {
   
   autoSave();
 }
+// Verhindere dass Mobile-Karten die Tabellen beim Tippen überschreiben
+let isSyncing = false;
 
+function syncMobileToTableSafe() {
+  if (isSyncing) return;
+  isSyncing = true;
+  
+  syncMobileToTable();
+  
+  setTimeout(() => {
+    isSyncing = false;
+  }, 100);
+}
 function syncCards(type, tableId, fields) {
   const cards = document.querySelectorAll(`#${type}-cards .mobile-card`);
   const table = document.getElementById(tableId);
@@ -597,10 +611,10 @@ function getTableData(tableId) {
 // Cloud-Speicher mit Firebase
 async function autoSave() {
   const data = {
-    todos: getTableData('todo-table'),
-    schueler: getTableData('schueler-table'),
-    anbieter: getTableData('anbieter-table'),
-    images: Array.from(document.querySelectorAll('#gallery img')).map(img => img.src),
+    todos: JSON.stringify(getTableData('todo-table')),
+    schueler: JSON.stringify(getTableData('schueler-table')),
+    anbieter: JSON.stringify(getTableData('anbieter-table')),
+    images: JSON.stringify(Array.from(document.querySelectorAll('#gallery img')).map(img => img.src)),
     timestamp: Date.now()
   };
   
@@ -610,69 +624,66 @@ async function autoSave() {
   } catch(e) {
     console.error('❌ Fehler:', e);
   }
-}
+  }
 
 async function loadData() {
   try {
     const doc = await db.collection('abihoodie').doc('main-data').get();
     if (doc.exists) {
       const data = doc.data();
-      setTableData('todo-table', data.todos);
-      setTableData('schueler-table', data.schueler);
-      setTableData('anbieter-table', data.anbieter);
       
-      loadMobileCards('todo', data.todos);
-      loadMobileCards('schueler', data.schueler);
-      loadMobileCards('anbieter', data.anbieter);
+      const todos = JSON.parse(data.todos || '[]');
+      const schueler = JSON.parse(data.schueler || '[]');
+      const anbieter = JSON.parse(data.anbieter || '[]');
+      const images = JSON.parse(data.images || '[]');
+      
+      setTableData('todo-table', todos);
+      setTableData('schueler-table', schueler);
+      setTableData('anbieter-table', anbieter);
+      
+      loadMobileCards('todo', todos);
+      loadMobileCards('schueler', schueler);
+      loadMobileCards('anbieter', anbieter);
       
       const gallery = document.getElementById('gallery');
       gallery.innerHTML = '';
-      if (data.images) {
-        data.images.forEach(src => {
-          const wrapper = document.createElement('div');
-          wrapper.style.position = 'relative';
-          wrapper.style.display = 'inline-block';
-          
-          const img = document.createElement('img');
-          img.src = src;
-          img.onclick = function() { openModal(src); };
-          
-          const deleteBtn = document.createElement('button');
-          deleteBtn.innerHTML = '❌';
-          deleteBtn.style.position = 'absolute';
-          deleteBtn.style.top = '5px';
-          deleteBtn.style.right = '5px';
-          deleteBtn.style.background = 'white';
-          deleteBtn.style.border = 'none';
-          deleteBtn.style.borderRadius = '50%';
-          deleteBtn.style.width = '25px';
-          deleteBtn.style.height = '25px';
-          deleteBtn.style.cursor = 'pointer';
-          deleteBtn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
-          deleteBtn.onclick = function(e) {
-            e.stopPropagation();
-            wrapper.remove();
-            autoSave();
-          };
-          
-          wrapper.appendChild(img);
-          wrapper.appendChild(deleteBtn);
-          gallery.appendChild(wrapper);
-        });
-      }
+      images.forEach(src => {
+        const wrapper = document.createElement('div');
+        wrapper.style.position = 'relative';
+        wrapper.style.display = 'inline-block';
+        
+        const img = document.createElement('img');
+        img.src = src;
+        img.onclick = function() { openModal(src); };
+        
+        const deleteBtn = document.createElement('button');
+        deleteBtn.innerHTML = '❌';
+        deleteBtn.style.position = 'absolute';
+        deleteBtn.style.top = '5px';
+        deleteBtn.style.right = '5px';
+        deleteBtn.style.background = 'white';
+        deleteBtn.style.border = 'none';
+        deleteBtn.style.borderRadius = '50%';
+        deleteBtn.style.width = '25px';
+        deleteBtn.style.height = '25px';
+        deleteBtn.style.cursor = 'pointer';
+        deleteBtn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+        deleteBtn.onclick = function(e) {
+          e.stopPropagation();
+          wrapper.remove();
+          autoSave();
+        };
+        
+        wrapper.appendChild(img);
+        wrapper.appendChild(deleteBtn);
+        gallery.appendChild(wrapper);
+      });
       console.log('✅ Aus Cloud geladen!');
     }
   } catch(e) {
     console.error('❌ Fehler:', e);
   }
 }
-
-// Echtzeit-Sync: Lädt automatisch wenn sich Daten ändern
-db.collection('abihoodie').doc('main-data').onSnapshot((doc) => {
-  if (doc.exists) {
-    loadData();
-  }
-});
 function loadMobileCards(type, data) {
   const container = document.getElementById(`${type}-cards`);
   container.innerHTML = '';
